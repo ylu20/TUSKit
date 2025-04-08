@@ -152,6 +152,8 @@ final class UploadDataTask: NSObject, IdentifiableTask {
             completed(.success([task]))
         } catch let error as TUSClientError {
             completed(.failure(error))
+        } catch let error as TUSAPIError {
+            completed(.failure(error))
         } catch {
             completed(.failure(TUSClientError.couldNotUploadFile(underlyingError: error)))
         }

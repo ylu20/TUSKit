@@ -89,6 +89,8 @@ final class StatusTask: IdentifiableTask {
                         }
                     } catch let error as TUSClientError {
                         completed(.failure(error))
+                    } catch let error as TUSAPIError {
+                        completed(.failure(error))
                     } catch {
                         completed(.failure(TUSClientError.couldNotGetFileStatus))
                     }
