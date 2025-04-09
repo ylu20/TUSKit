@@ -22,10 +22,10 @@ Pod::Spec.new do |s|
 Swift client for https://tus.io called TUSKit. Mac and iOS compatible.
                        DESC
 
-  s.homepage         = 'https://github.com/tus/TUSKit'
+  s.homepage         = 'https://github.com/ylu20/TUSKit'
   s.license          = { :type => 'MIT', :file => 'LICENSE' }
   s.author           = 'Transloadit'
-  s.source           = { :git => 'https://github.com/tus/TUSKit.git', :tag => s.version.to_s }
+  s.source           = { :git => 'https://github.com/ylu20/TUSKit', :tag => s.version.to_s }
   s.platform         = :ios
 
   s.ios.deployment_target = '10.0'
