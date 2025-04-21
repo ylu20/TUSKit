@@ -136,7 +136,7 @@ public final class TUSClient {
     /// - Throws: File related errors when it can't make a directory at the designated path.
     @available(*, deprecated, message: "Use the init(server:sessionIdentifier:sessionConfiguration:storageDirectory:chunkSize:supportedExtension) initializer instead.")
     public init(server: URL, sessionIdentifier: String, storageDirectory: URL? = nil,
-                session: URLSession = URLSession.shared, chunkSize: Int = 500 * 1024,
+                session: URLSession = URLSession.shared, chunkSize: Int = 500 * 1024, retryCount: Int  = 2,
                 supportedExtensions: [TUSProtocolExtension] = [.creation], reportingQueue: DispatchQueue = DispatchQueue.main) throws {
         self.sessionIdentifier = sessionIdentifier
         self.api = TUSAPI(session: session)
@@ -147,6 +147,7 @@ public final class TUSClient {
         } else {
             self.chunkSize = nil
         }
+        self.retryCount = retryCount
         self.supportedExtensions = supportedExtensions
         self.scheduler = Scheduler()
         self.reportingQueue = reportingQueue
