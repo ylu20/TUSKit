@@ -91,7 +91,7 @@ public final class TUSClient {
     ///   make sure that you provide an empty array in the `supportExtensions` parameter.
     /// - Throws: File related errors when it can't make a directory at the designated path.
     public init(server: URL, sessionIdentifier: String, sessionConfiguration: URLSessionConfiguration,
-                storageDirectory: URL? = nil, chunkSize: Int = 500 * 1024,
+                storageDirectory: URL? = nil, chunkSize: Int = 500 * 1024, retryCount: Int  = 2,
                 supportedExtensions: [TUSProtocolExtension] = [.creation], reportingQueue: DispatchQueue = DispatchQueue.main) throws {
 
         if #available(iOS 7.0, macOS 11.0, *) {
@@ -104,6 +104,7 @@ public final class TUSClient {
         
         
         let scheduler = Scheduler()
+        self.retryCount = retryCount
         self.sessionIdentifier = sessionIdentifier
         self.api = TUSAPI(sessionConfiguration: sessionConfiguration)
         self.files = try Files(storageDirectory: storageDirectory)
