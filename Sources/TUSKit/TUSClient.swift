@@ -64,7 +64,7 @@ public final class TUSClient {
     // MARK: - Private Properties
     
     /// How often to try an upload if it fails. A retryCount of 2 means 3 total uploads max. (1 initial upload, and on repeated failure, 2 more retries.)
-    private let retryCount = 2
+    private var retryCount = 2
     
     private let files: Files
     private var didStopAndCancel = false
