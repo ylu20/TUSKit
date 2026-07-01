@@ -22,17 +22,22 @@ final class StatusTask: IdentifiableTask {
     let remoteDestination: URL
     let metaData: UploadMetadata
     let chunkSize: Int?
+    /// True when this StatusTask was scheduled by the retry path to re-sync the offset
+    /// after an in-flight upload failure. Recovery HEADs must not reset the metadata's
+    /// errorCount, otherwise PATCH-fail / HEAD-succeed cycles could loop indefinitely.
+    let isRecovery: Bool
     private var didCancel: Bool = false
     weak var sessionTask: URLSessionDataTask?
 
     private let queue = DispatchQueue(label: "com.tuskit.statustask")
 
-    init(api: TUSAPI, remoteDestination: URL, metaData: UploadMetadata, files: Files, chunkSize: Int?) {
+    init(api: TUSAPI, remoteDestination: URL, metaData: UploadMetadata, files: Files, chunkSize: Int?, isRecovery: Bool = false) {
         self.api = api
         self.remoteDestination = remoteDestination
         self.metaData = metaData
         self.files = files
         self.chunkSize = chunkSize
+        self.isRecovery = isRecovery
     }
     
     func run(completed: @escaping TaskCompletion) {

@@ -297,6 +297,11 @@ final class TUSAPI {
             self.callbacks[metaData.id.uuidString] = { result in
                 processResult(completion: completion) {
                     let response = try result.get()
+
+                    guard (200...299).contains(response.statusCode) else {
+                        throw TUSAPIError.failedRequest(response)
+                    }
+
                     guard let offsetStr = response.allHeaderFields[caseInsensitive: "upload-offset"] as? String,
                           let offset = Int(offsetStr) else {
                         throw TUSAPIError.couldNotRetrieveOffset
@@ -308,12 +313,17 @@ final class TUSAPI {
         task.resume()
         return task
     }
-    
+
     func registerCallback(_ completion: @escaping (Result<Int, TUSAPIError>) -> Void, forMetadata metadata: UploadMetadata) {
         queue.sync {
             self.callbacks[metadata.id.uuidString] = { result in
                 processResult(completion: completion) {
                     let response = try result.get()
+
+                    guard (200...299).contains(response.statusCode) else {
+                        throw TUSAPIError.failedRequest(response)
+                    }
+
                     guard let offsetStr = response.allHeaderFields[caseInsensitive: "upload-offset"] as? String,
                           let offset = Int(offsetStr) else {
                         throw TUSAPIError.couldNotRetrieveOffset

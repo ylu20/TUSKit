@@ -614,7 +614,13 @@ extension TUSClient: SchedulerDelegate {
     }
     
     func handleFinishedStatusTask(_ statusTask: StatusTask) {
-        statusTask.metaData.errorCount = 0 // We reset errorcounts after a succesful action.
+        // A recovery StatusTask was scheduled to re-sync the offset after a PATCH failure.
+        // The consecutive-failure counter must keep climbing across recovery cycles so
+        // retryCount still bounds them; only real progress (a successful PATCH) should
+        // reset it.
+        if !statusTask.isRecovery {
+            statusTask.metaData.errorCount = 0
+        }
         if statusTask.metaData.isFinished {
             _ = try? files.removeFileAndMetadata(statusTask.metaData) // If removing the file fails here, then it will be attempted again at next startup.
         }
@@ -643,6 +649,25 @@ extension TUSClient: SchedulerDelegate {
         }
         reportingQueue.async {
             self.delegate?.didFinishUpload(id: uploadTask.metaData.id, url: url, context: uploadTask.metaData.context, client: self)
+        }
+    }
+
+    /// Returns true when a failed `UploadDataTask` should re-sync the server offset via HEAD
+    /// before retrying. Applies to transport-level failures (RST, timeout, connection-lost)
+    /// — the situations where the connection died mid-body and the client can't know what
+    /// the server persisted. Explicit cancellations are excluded so `cancel(id:)`, session
+    /// invalidation, and process-death teardown don't auto-resume an upload the caller (or
+    /// the OS) has already stopped.
+    private func shouldRecoverOffset(for error: Error) -> Bool {
+        guard let apiError = error as? TUSAPIError else { return false }
+        switch apiError {
+        case .underlyingError(let underlying):
+            if let urlError = underlying as? URLError, urlError.code == .cancelled {
+                return false
+            }
+            return true
+        default:
+            return false
         }
     }
 
@@ -696,7 +721,26 @@ extension TUSClient: SchedulerDelegate {
         
         let canRetry = metaData.errorCount <= retryCount
         if canRetry {
-            scheduler.addTask(task: task)
+            // For UploadDataTask failures where we can't be sure of the server's current
+            // offset — a transport-level failure (RST, connection-lost, timeout) or a 409
+            // offset-mismatch — re-sync via HEAD before retrying. Blindly re-PATCHing the
+            // old range in those cases risks a 409 loop that burns retries without progress.
+            // Every other error (auth, client-detected protocol errors, etc) keeps the
+            // original retry semantics.
+            if let uploadTask = task as? UploadDataTask,
+               let remoteDestination = uploadTask.metaData.remoteDestination,
+               shouldRecoverOffset(for: error) {
+                let recovery = StatusTask(api: api,
+                                          remoteDestination: remoteDestination,
+                                          metaData: uploadTask.metaData,
+                                          files: files,
+                                          chunkSize: chunkSize,
+                                          isRecovery: true)
+                recovery.progressDelegate = self
+                scheduler.addTask(task: recovery)
+            } else {
+                scheduler.addTask(task: task)
+            }
         } else { // Exhausted all retries, reporting back as failure.
             queue.sync {
                 self.uploads[metaData.id] = nil
