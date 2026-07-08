@@ -63,7 +63,7 @@ final class CreationTask: IdentifiableTask {
                         }
                         task.progressDelegate = progressDelegate
                         if self.didCancel {
-                            completed(.failure(TUSClientError.taskCancelled))
+                            completed(.failure(TUSClientError.taskCancelledWithReason(reason: "cancelled after server file creation")))
                         } else {
                             completed(.success([task]))
                         }

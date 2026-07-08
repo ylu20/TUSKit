@@ -65,7 +65,7 @@ final class UploadDataTask: NSObject, IdentifiableTask {
         queue.async {
             // This check is right before the task is created. In case another thread calls cancel during this loop. Optimization: Add synchronization point (e.g. serial queue or actor).
             guard !self.isCanceled else {
-                completed(.failure(TUSClientError.taskCancelled))
+                completed(.failure(TUSClientError.taskCancelledWithReason(reason: "cancelled before running")))
                 return
             }
 
@@ -136,7 +136,7 @@ final class UploadDataTask: NSObject, IdentifiableTask {
             // If the task has been canceled
             // we don't continue to create subsequent UploadDataTasks
             if self.isCanceled {
-                throw TUSClientError.taskCancelled
+                throw TUSClientError.taskCancelledWithReason(reason: "cancelled after storing chunk")
             }
 
             let nextRange: Range<Int>?

@@ -13,6 +13,7 @@ public enum TUSAPIError: Error {
     case couldNotFetchStatus
     case couldNotFetchServerInfo
     case couldNotRetrieveOffset
+    case couldNotRetrieveOffsetWithResponse(HTTPURLResponse)
     case couldNotRetrieveLocation
     case failedRequest(HTTPURLResponse)
 }
@@ -257,7 +258,7 @@ final class TUSAPI {
                     
                     guard let offsetStr = response.allHeaderFields[caseInsensitive: "upload-offset"] as? String,
                           let offset = Int(offsetStr) else {
-                        throw TUSAPIError.couldNotRetrieveOffset
+                        throw TUSAPIError.couldNotRetrieveOffsetWithResponse(response)
                     }
                     return offset
                 }
@@ -304,7 +305,7 @@ final class TUSAPI {
 
                     guard let offsetStr = response.allHeaderFields[caseInsensitive: "upload-offset"] as? String,
                           let offset = Int(offsetStr) else {
-                        throw TUSAPIError.couldNotRetrieveOffset
+                        throw TUSAPIError.couldNotRetrieveOffsetWithResponse(response)
                     }
                     return offset
                 }
@@ -326,7 +327,7 @@ final class TUSAPI {
 
                     guard let offsetStr = response.allHeaderFields[caseInsensitive: "upload-offset"] as? String,
                           let offset = Int(offsetStr) else {
-                        throw TUSAPIError.couldNotRetrieveOffset
+                        throw TUSAPIError.couldNotRetrieveOffsetWithResponse(response)
                     }
                     return offset
                 }

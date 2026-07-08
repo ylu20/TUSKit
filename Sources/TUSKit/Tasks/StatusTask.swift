@@ -78,7 +78,7 @@ final class StatusTask: IdentifiableTask {
                             // If the task has been canceled
                             // we don't continue to create subsequent UploadDataTasks
                             if self.didCancel {
-                                throw TUSClientError.taskCancelled
+                                throw TUSClientError.taskCancelledWithReason(reason: "cancelled after fetching offset")
                             }
 
                             let nextRange: Range<Int>
