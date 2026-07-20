@@ -496,7 +496,7 @@ public final class TUSClient {
                       let task = try? UploadDataTask(api: self.api, metaData: metadata, files: self.files) else {
                     return
                 }
-                
+
                 self.api.registerCallback({ result in
                     task.taskCompleted(result: result, completed: { [weak self] result in
                         if case .failure = result {
@@ -692,11 +692,14 @@ extension TUSClient: SchedulerDelegate {
     }
 
     /// Returns true when a failed `UploadDataTask` should re-sync the server offset via HEAD
-    /// before retrying. Applies to transport-level failures (RST, timeout, connection-lost)
-    /// — the situations where the connection died mid-body and the client can't know what
-    /// the server persisted. Explicit cancellations are excluded so `cancel(id:)`, session
-    /// invalidation, and process-death teardown don't auto-resume an upload the caller (or
-    /// the OS) has already stopped.
+    /// before retrying. Two situations qualify:
+    /// - Transport-level failures (RST, timeout, connection-lost) where the connection died
+    ///   mid-body and the client can't know what the server persisted. Explicit cancellations
+    ///   are excluded so `cancel(id:)`, session invalidation, and process-death teardown don't
+    ///   auto-resume an upload the caller (or the OS) has already stopped.
+    /// - HTTP 409/412 offset conflicts, where the server rejected the PATCH because its offset
+    ///   no longer matches the client's stored offset. Re-PATCHing the stale range just loops
+    ///   the same 409 until retries exhaust; a HEAD realigns to the server's true offset.
     private func shouldRecoverOffset(for error: Error) -> Bool {
         guard let apiError = error as? TUSAPIError else { return false }
         switch apiError {
@@ -705,6 +708,8 @@ extension TUSClient: SchedulerDelegate {
                 return false
             }
             return true
+        case .failedRequest(let response):
+            return response.statusCode == 409 || response.statusCode == 412
         default:
             return false
         }
