@@ -612,8 +612,20 @@ public final class TUSClient {
         guard let task = try taskFor(metaData: metaData, api: api, files: files, chunkSize: chunkSize, progressDelegate: self) else {
             throw TUSClientError.uploadIsAlreadyFinished
         }
-        queue.sync {
+        // Atomically claim this id. `uploads` is the authoritative in-process record of which
+        // uploads are being handled. If an entry already exists a task is in flight (a running
+        // upload, or one just scheduled by a concurrent `start()`), and scheduling another would
+        // put two tasks against the same TUS upload — they PATCH different ranges and the server
+        // rejects the out-of-order writes with 409 until retries exhaust. The prior async
+        // `checkTaskExists` guard can't see such a task in time; this synchronous claim can.
+        let didClaim: Bool = queue.sync {
+            guard self.uploads[metaData.id] == nil else { return false }
             self.uploads[metaData.id] = metaData
+            return true
+        }
+        guard didClaim else {
+            trace("scheduleTask SKIP \(metaTag(metaData)) — id already claimed, duplicate task prevented")
+            return
         }
         trace("uploads[SET] \(metaTag(metaData)) uploads.count=\(remainingUploads)")
         scheduler.addTask(task: task)
