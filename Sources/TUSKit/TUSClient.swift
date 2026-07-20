@@ -60,6 +60,26 @@ public final class TUSClient {
     public let sessionIdentifier: String
     public weak var delegate: TUSClientDelegate?
     public let supportedExtensions: [TUSProtocolExtension]
+
+    // MARK: - Debug tracing (temporary)
+    /// Sink for internal state-transition traces. Wire it to the host app's logger to see
+    /// resume decisions, the `uploads` dict lifecycle, and per-metadata identity that the
+    /// delegate callbacks can't expose. Leave nil in production for zero overhead.
+    public var logHandler: ((String) -> Void)?
+    private var lastProgressMeta = [UUID: ObjectIdentifier]()
+
+    private func trace(_ message: @autoclosure () -> String) {
+        guard let logHandler else { return }
+        logHandler("[TUS/\(sessionIdentifier)] " + message())
+    }
+
+    /// Short, stable identity per upload: the id prefix plus the `UploadMetadata` *instance*
+    /// hash. Two tasks scheduled for the same upload load two distinct metadata instances, so
+    /// a differing `meta=` for the same id is the direct signature of duplicate scheduling.
+    private func metaTag(_ metaData: UploadMetadata) -> String {
+        let instance = String(UInt(bitPattern: ObjectIdentifier(metaData).hashValue) & 0xffffff, radix: 16)
+        return "\(metaData.id.uuidString.prefix(8)) meta=\(instance)"
+    }
     
     // MARK: - Private Properties
     
@@ -559,18 +579,23 @@ public final class TUSClient {
                 return acceptableErrorCount && unFinished
             })
             
+            trace("scheduleStoredTasks: \(metaDataItems.count) unfinished stored upload(s), uploads.count=\(remainingUploads)")
             for metaData in metaDataItems {
+                trace("resume-scan \(metaTag(metaData)) errorCount=\(metaData.errorCount) isFinished=\(metaData.isFinished)")
                 api.checkTaskExists(for: metaData) { taskExists in
                     if !taskExists {
+                        self.trace("resume-SCHEDULE \(self.metaTag(metaData)) (no existing session task)")
                         do {
                             try self.scheduleTask(for: metaData)
                         } catch {
-                            //...
+                            self.trace("resume-schedule-FAILED \(self.metaTag(metaData)) error=\(error)")
                         }
+                    } else {
+                        self.trace("resume-SKIP \(self.metaTag(metaData)) (session task already exists)")
                     }
                 }
             }
-            
+
             return metaDataItems
         } catch (let error) {
             let tusError = TUSClientError.couldNotLoadData(underlyingError: error)
@@ -590,9 +615,10 @@ public final class TUSClient {
         queue.sync {
             self.uploads[metaData.id] = metaData
         }
+        trace("uploads[SET] \(metaTag(metaData)) uploads.count=\(remainingUploads)")
         scheduler.addTask(task: task)
     }
-    
+
 }
 
 extension TUSClient: SchedulerDelegate {
@@ -647,6 +673,7 @@ extension TUSClient: SchedulerDelegate {
         queue.sync {
             self.uploads[uploadTask.metaData.id] = nil
         }
+        trace("uploads[CLEAR] \(metaTag(uploadTask.metaData)) reason=finished uploads.count=\(remainingUploads)")
         reportingQueue.async {
             self.delegate?.didFinishUpload(id: uploadTask.metaData.id, url: url, context: uploadTask.metaData.context, client: self)
         }
@@ -673,6 +700,7 @@ extension TUSClient: SchedulerDelegate {
 
     func didStartTask(task: ScheduledTask, scheduler: Scheduler) {
         guard let task = task as? UploadDataTask else { return }
+        trace("task-start \(metaTag(task.metaData)) offset=\(task.metaData.uploadedRange?.upperBound ?? 0)/\(task.metaData.size) errorCount=\(task.metaData.errorCount)")
         let isUploadRangeEmpty = task.metaData.uploadedRange?.isEmpty ?? true
         
         if isUploadRangeEmpty && task.metaData.errorCount == 0 {
@@ -720,6 +748,7 @@ extension TUSClient: SchedulerDelegate {
         }
         
         let canRetry = metaData.errorCount <= retryCount
+        trace("task-error \(metaTag(metaData)) errorCount=\(metaData.errorCount)/\(retryCount) canRetry=\(canRetry) recoverOffset=\(shouldRecoverOffset(for: error)) error=\(error)")
         if canRetry {
             // For UploadDataTask failures where we can't be sure of the server's current
             // offset — a transport-level failure (RST, connection-lost, timeout) or a 409
@@ -745,6 +774,7 @@ extension TUSClient: SchedulerDelegate {
             queue.sync {
                 self.uploads[metaData.id] = nil
             }
+            trace("uploads[CLEAR] \(metaTag(metaData)) reason=retries-exhausted uploads.count=\(remainingUploads)")
             reportingQueue.async {
                 self.delegate?.uploadFailed(id: metaData.id, error: error, context: metaData.context, client: self)
             }
@@ -787,6 +817,19 @@ extension TUSClient: ProgressDelegate {
     
     @available(iOS 11.0, macOS 10.13, *)
     func progressUpdatedFor(metaData: UploadMetadata, totalUploadedBytes: Int) {
+        // Fires only when a *different* metadata instance starts reporting for the same id —
+        // the direct signature of two tasks driving one upload. Steady-state progress is not
+        // logged here (the host app already logs per-tick progress), so this stays quiet
+        // unless duplication actually occurs.
+        let instance = ObjectIdentifier(metaData)
+        let previousInstance: ObjectIdentifier? = queue.sync {
+            let prev = lastProgressMeta[metaData.id]
+            lastProgressMeta[metaData.id] = instance
+            return prev
+        }
+        if let previousInstance, previousInstance != instance {
+            trace("⚠️ DUPLICATE progress source \(metaTag(metaData)) bytes=\(totalUploadedBytes) — a different metadata instance is now reporting for this id (two tasks)")
+        }
         reportingQueue.async {
             self.delegate?.progressFor(id: metaData.id, context: metaData.context, bytesUploaded: totalUploadedBytes, totalBytes: metaData.size, client: self)
         }
